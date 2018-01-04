@@ -43,8 +43,43 @@ import Network (connectTo, HostName, PortID)
 import qualified Network.TLS as TLS
 import qualified Network.TLS.Extra.Cipher as TLS
 import Database.MongoDB.Query (access, slaveOk, retrieveServerData)
+import System.X509.Unix ( getSystemCertificateStore )
 
 -- | Connect to mongodb using TLS
+
+{- FIXME This version has three changes:
+
+      - Now using the system's certificate store
+      - Hacking the host domain name becuase of a specific problem I was having with my certs
+      - Removed the no-op clientHooks
+
+   This code is still very dirty and isn't a good candidate for public use. Will work on it later
+-}
+connect :: HostName -> PortID -> IO Pipe
+connect host port = bracketOnError (connectTo host port) hClose $ \handle -> do
+
+  globalCertificateStore <- getSystemCertificateStore
+  --let params = (TLS.defaultParamsClient host "")
+  let params = (TLS.defaultParamsClient "*.documents.azure.com" "")
+        { TLS.clientShared = def
+            { TLS.sharedCAStore = globalCertificateStore }
+        , TLS.clientSupported = def
+            { TLS.supportedCiphers = TLS.ciphersuite_all }
+        --, TLS.clientHooks = def
+        --    { TLS.onServerCertificate = \_ _ _ _ -> return []}
+        }
+  context <- TLS.contextNew handle params
+  TLS.handshake context
+
+  conn <- tlsConnection context
+  rec
+    p <- newPipeWith sd conn
+    sd <- access p slaveOk "admin" retrieveServerData
+  return p
+
+
+-- FIXME This is the original function
+{-
 connect :: HostName -> PortID -> IO Pipe
 connect host port = bracketOnError (connectTo host port) hClose $ \handle -> do
 
@@ -62,6 +97,8 @@ connect host port = bracketOnError (connectTo host port) hClose $ \handle -> do
     p <- newPipeWith sd conn
     sd <- access p slaveOk "admin" retrieveServerData
   return p
+-}
+
 
 tlsConnection :: TLS.Context -> IO Transport
 tlsConnection ctx = do
