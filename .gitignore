@@ -1,3 +1,10 @@
+# cabal build artifacts
 dist/
 cabal.sandbox.config
 .cabal-sandbox/
+
+# stack build artifacts
+.stack-work
+
+# Vim swap files
+*.sw?
